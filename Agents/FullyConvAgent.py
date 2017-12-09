@@ -167,14 +167,33 @@ class AC_Network():
                 padding='same',
                 activation=tf.nn.relu)
 
+
+            #reshaping the non spatial input
+
+            # Reshape non-spatial input as a vector.
+            #non_spatial_input_as_vector = tf.reshape(self.inputs_nonspatial, [-1,])
+            non_spatial_input_as_vector = self.inputs_nonspatial
+            zero_padding = tf.zeros([non_spatial_input_as_vector.shape[0],64*64] - tf.shape(non_spatial_input_as_vector), dtype=tf.float32)
+            # Concatenate with the padding.
+            a_padded = tf.concat([non_spatial_input_as_vector, zero_padding],0)
+
+            # Reshape the padded vector to the desired shape.
+            non_spatial_input_as_vector = tf.reshape(a_padded, [64,64,1])
+
             # Convolutional layer for the spatial action policy
             # 1 output channel with 1 x 1 convolution
             self.spatial_conv1 = tf.layers.conv2d(
-                inputs=tf.concat([tf.reshape(self.inputs_nonspatial, self.screen_conv2.get_shape), self.screen_conv2, self.minimap_conv2], axis=0),
+                inputs=tf.concat([non_spatial_input_as_vector, self.screen_conv2, self.minimap_conv2 ], axis=2),
                 filters=1,
                 kernel_size=[1,1],
                 strides=[1,1]
             )
+
+            #self.spatial_conv1 = tf.layers.conv2d(
+            #   inputs=tf.concat([ self.screen_conv2, self.minimap_conv2 ], axis=2),
+            #    filters=1,
+            #    kernel_size=[1,1],
+            #    strides=[1,1])
 
             # According to [1]: "The results are concatenated and sent through a linear layer with a ReLU activation."
             # Get the flattened shapes of the conv outputs
@@ -186,15 +205,13 @@ class AC_Network():
                 minimap_output_length *= dim
             # Concatenate, the flattened version of the conv outputs and linear non spatial outputs.
             # Number of units in the fully connected layer is not mentioned in the AtariNet Agent section, but the FullyConv Agent uses a fully connected layer with 256 units with ReLu
-            #To compute the baseline and policies over categorical (non-spatial) actions, the state representation
+            # To compute the baseline and policies over categorical (non-spatial) actions, the state representation
             # is first passed through a fully-connected layer with 256 units and ReLU activations, followed by fully-connected linear layers.
 
             self.latent_vector = tf.layers.dense(
                 inputs=tf.concat([self.inputs_nonspatial, tf.reshape(self.screen_conv2,shape=[-1,screen_output_length]), tf.reshape(self.minimap_conv2,shape=[-1,minimap_output_length])], axis=1),
                 units=256,
                 activation=tf.nn.relu)
-
-
             # Output layers for policy and value estimations
             # 1 policy network for base actions (non spatial)
             # 14/16 policy networks for arguments
@@ -218,7 +235,7 @@ class AC_Network():
                             activation=tf.nn.softmax,
                             kernel_initializer=normalized_columns_initializer(0.01))
                     elif arg.name == 'screen':
-                        self.policy_arg[arg.name][dim] = self.spatial_conv
+                        self.policy_arg[arg.name][dim] = self.spatial_conv1
 
             self.value = tf.layers.dense(
                 inputs=self.latent_vector,
@@ -394,6 +411,7 @@ class Worker():
                 s_screen = screen_stack
                 s_minimap = minimap_stack
                 s_nonspatial = nonspatial_stack
+                print(nonspatial_stack.shape)
 
                 while not episode_end:
 

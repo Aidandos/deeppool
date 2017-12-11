@@ -17,15 +17,7 @@ from pysc2.env import environment
 from pysc2.env import sc2_env
 
 
-# Initialization, covering the base class setup method
-# Construct a strategy network
-# Construct training methods
-# Training Strategy Network
-# According to the observation of the output action, covering the base class step method
-
 def process_observation(observation, action_spec, observation_spec):
-    # reward
-    reward = observation.reward
     # features
     features = observation.observation
     spatial_features = ['minimap', 'screen']
@@ -39,10 +31,12 @@ def process_observation(observation, action_spec, observation_spec):
         if feature_label not in spatial_features + variable_features + available_actions:
             nonspatial_stack = np.concatenate((nonspatial_stack, feature.reshape(-1)))
         elif feature_label in variable_features:
-            padded_feature = np.concatenate((feature.reshape(-1), np.zeros(max_no[feature_label] * observation_spec['single_select'][1] - len(feature.reshape(-1)))))
+            padded_feature = np.concatenate((feature.reshape(-1), np.zeros(
+                max_no[feature_label] * observation_spec['single_select'][1] - len(feature.reshape(-1)))))
             nonspatial_stack = np.concatenate((nonspatial_stack, padded_feature))
         elif feature_label in available_actions:
-            available_actions_feature = [1 if action_id in feature else 0 for action_id in np.arange(max_no['available_actions'])]
+            available_actions_feature = [1 if action_id in feature else 0 for action_id in
+                                         np.arange(max_no['available_actions'])]
             nonspatial_stack = np.concatenate((nonspatial_stack, available_actions_feature))
     nonspatial_stack = np.expand_dims(nonspatial_stack, axis=0)
     # spatial_minimap features
@@ -51,7 +45,7 @@ def process_observation(observation, action_spec, observation_spec):
     screen_stack = np.expand_dims(np.stack(features['screen'], axis=2), axis=0)
     # is episode over?
     episode_end = observation.step_type == environment.StepType.LAST
-    return reward, nonspatial_stack, minimap_stack, screen_stack, episode_end
+    return nonspatial_stack, minimap_stack, screen_stack, episode_end
 
 
 class Qnetwork():
@@ -128,6 +122,9 @@ class Qnetwork():
             padding='valid',
             activation=tf.nn.relu)
 
+
+
+
 class DeepQAgent(base_agent.BaseAgent):
     """A random agent for starcraft."""
 
@@ -135,6 +132,7 @@ class DeepQAgent(base_agent.BaseAgent):
         super(DeepQAgent, self).__init__()
         tf.reset_default_graph()
         self.sess = tf.Session()
+        self.episodes = 2
 
     def setup(self, obs_spec, action_spec):
         super(DeepQAgent, self).setup(obs_spec, action_spec)
@@ -148,13 +146,13 @@ class DeepQAgent(base_agent.BaseAgent):
             os.makedirs(model_path)
 
         self.network = Qnetwork(self.obs_spec, self.action_spec)
-        #saver = tf.train.Saver(max_to_keep=5)
+        # saver = tf.train.Saver(max_to_keep=5)
         print("Intitializing")
 
         if load_model == True:
-               print('Loading Model...')
-               ckpt = tf.train.get_checkpoint_state(model_path)
-                #saver.restore(self.sess, ckpt.model_checkpoint_path)
+            print('Loading Model...')
+            ckpt = tf.train.get_checkpoint_state(model_path)
+            # saver.restore(self.sess, ckpt.model_checkpoint_path)
         else:
             self.sess.run(tf.global_variables_initializer())
 
@@ -163,9 +161,9 @@ class DeepQAgent(base_agent.BaseAgent):
 
     def step_action(self, obs):
 
-        reward, nonspatial_stack, minimap_stack, screen_stack, episode_end = process_observation(obs,
-                                                                                                 self.action_spec,
-                                                                                                 self.obs_spec)
+        nonspatial_stack, minimap_stack, screen_stack, episode_end = process_observation(obs,
+                                                                                         self.action_spec,
+                                                                                         self.obs_spec)
         spatial_mini = self.sess.run(
             [self.network.minimap_conv2],
             feed_dict={self.network.inputs_spatial_screen: screen_stack,
@@ -181,5 +179,5 @@ class DeepQAgent(base_agent.BaseAgent):
 
         function_id = np.random.choice(obs.observation["available_actions"])
         args = [[np.random.randint(0, size) for size in arg.sizes]
-                    for arg in self.action_spec.functions[function_id].args]
+                for arg in self.action_spec.functions[function_id].args]
         return actions.FunctionCall(function_id, args)

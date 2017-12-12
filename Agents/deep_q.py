@@ -17,6 +17,20 @@ from pysc2.env import environment
 from pysc2.env import sc2_env
 
 
+_PLAYER_RELATIVE = features.SCREEN_FEATURES.player_relative.index
+_PLAYER_FRIENDLY = 1
+_PLAYER_NEUTRAL = 3  # beacon/minerals
+_PLAYER_HOSTILE = 4
+_NO_OP = actions.FUNCTIONS.no_op.id
+_MOVE_SCREEN = actions.FUNCTIONS.Move_screen.id
+_ATTACK_SCREEN = actions.FUNCTIONS.Attack_screen.id
+_SELECT_ARMY = actions.FUNCTIONS.select_army.id
+_NOT_QUEUED = [0]
+_SELECT_ALL = [0]
+
+
+
+
 def process_observation(observation, action_spec, observation_spec):
     # features
     features = observation.observation
@@ -46,6 +60,13 @@ def process_observation(observation, action_spec, observation_spec):
     # is episode over?
     episode_end = observation.step_type == environment.StepType.LAST
     return nonspatial_stack, minimap_stack, screen_stack, episode_end
+
+def normalized_columns_initializer(std=1.0):
+    def _initializer(shape, dtype=None, partition_info=None):
+        out = np.random.randn(*shape).astype(np.float32)
+        out *= std / np.sqrt(np.square(out).sum(axis=0, keepdims=True))
+        return tf.constant(out)
+    return _initializer
 
 
 class Qnetwork():
@@ -122,6 +143,56 @@ class Qnetwork():
             padding='valid',
             activation=tf.nn.relu)
 
+        # According to [1]: "The results are concatenated and sent through a linear layer with a ReLU activation."
+        # Get the flattened shapes of the conv outputs
+        screen_output_length = 1
+        for dim in self.screen_conv2.get_shape().as_list()[1:]:
+            screen_output_length *= dim
+        minimap_output_length = 1
+        for dim in self.minimap_conv2.get_shape().as_list()[1:]:
+            minimap_output_length *= dim
+        # Concatenate, the flattened version of the conv outputs and linear non spatial outputs.
+        # Number of units in the fully connected layer is not mentioned in the AtariNet Agent section, but the FullyConv Agent uses a fully connected layer with 256 units with ReLu
+        self.latent_vector = tf.layers.dense(
+            inputs=tf.concat([self.nonspatial_dense, tf.reshape(self.screen_conv2, shape=[-1, screen_output_length]),
+                              tf.reshape(self.minimap_conv2, shape=[-1, minimap_output_length])], axis=1),
+            units=256,
+            activation=tf.nn.relu)
+
+        # value function
+        self.value = tf.layers.dense(
+            inputs=self.latent_vector,
+            units=1,
+            kernel_initializer=normalized_columns_initializer(1.0))
+
+        # Advantage function
+        self.advantage = tf.layers.dense(
+            inputs=self.latent_vector,
+            units=len(action_spec.functions),
+            kernel_initializer=normalized_columns_initializer(0.01))
+
+        # adding advantage and value function to calculate the Q value and taking a softmax over the
+        # q values for each action
+        self.Qvalue = tf.layers.dense(
+            inputs= tf.add(self.advantage, self.value),
+            units=len(action_spec.functions),
+            activation= tf.nn.softmax,
+            kernel_initializer=normalized_columns_initializer(0.01)
+        )
+
+        self.predict = tf.argmax(self.Qvalue, 1)
+
+        # Below we obtain the loss by taking the sum of squares difference between the target and prediction Q values.
+        self.targetQ = tf.placeholder(shape=[None], dtype=tf.float32)
+        self.actions = tf.placeholder(shape=[None], dtype=tf.int32)
+        self.actions_onehot = tf.one_hot(self.actions, len(action_spec.functions), dtype=tf.float32)
+
+        self.Q = tf.reduce_sum(tf.multiply(self.Qvalue, self.actions_onehot), axis=1)
+
+        self.td_error = tf.square(self.targetQ - self.Q)
+        self.loss = tf.reduce_mean(self.td_error)
+        self.trainer = tf.train.AdamOptimizer(learning_rate=0.0001)
+        self.updateModel = self.trainer.minimize(self.loss)
 
 
 

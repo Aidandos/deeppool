@@ -34,9 +34,10 @@ _SELECT_ALL = [0]
 # SELECT_ARMY = "Select Army"
 
 Actions = {
-    0 : _NO_OP,
-    1: _MOVE_SCREEN,
-    2: _SELECT_ARMY
+
+    0 : _SELECT_ARMY,
+    1 : _NO_OP,
+    2 : _MOVE_SCREEN
 }
 
 x = "X axis"
@@ -46,6 +47,8 @@ Spatial = {
     0:x,
     1:y
 }
+
+epsilon = 0.5
 
 
 def process_observation(observation, action_spec, observation_spec):
@@ -190,7 +193,7 @@ class Qnetwork():
         # q values for each action
         self.Qvalue_base = tf.layers.dense(
             inputs= tf.add(self.advantage_base, self.value),
-            units=len(Actions),
+            units=len(Actions)-1,
             activation= tf.nn.softmax,
             kernel_initializer=normalized_columns_initializer(0.01)
         )
@@ -201,12 +204,17 @@ class Qnetwork():
             self.advantage_spatial, self.value
         )
 
-        self.Qvalue_spatial_flat = tf.reshape(self.Qvalue_spatial, shape=[-1, 64*64])
+        self.Qvalue_spatial_flat = tf.layers.dense(inputs = tf.reshape(self.Qvalue_spatial, shape=[-1, 64*64]),
+                                                   units=64*64,
+                                                   activation= tf.nn.softmax,
+                                                   kernel_initializer= normalized_columns_initializer(0.01)
+                                                   )
 
         self.predict_base = tf.argmax(self.Qvalue_base, 1)
-        self.predict_spatial = tf.argmax(self.Qvalue_spatial_flat)
+        self.predict_spatial = tf.argmax(self.Qvalue_spatial_flat, 1)
 
         # Below we obtain the loss by taking the sum of squares difference between the target and prediction Q values.
+
         # self.targetQ = tf.placeholder(shape=[None], dtype=tf.float32)
         # self.actions = tf.placeholder(shape=[None], dtype=tf.int32)
         # self.actions_onehot = tf.one_hot(self.actions, len(Actions), dtype=tf.float32)
@@ -244,7 +252,6 @@ class DeepQAgent(base_agent.BaseAgent):
         # saver = tf.train.Saver(max_to_keep=5)
         print("Intitializing")
 
-
         if load_model == True:
             print('Loading Model...')
             ckpt = tf.train.get_checkpoint_state(model_path)
@@ -264,30 +271,45 @@ class DeepQAgent(base_agent.BaseAgent):
                                                                                          self.obs_spec)
 
         p_b, p_s = self.sess.run(
-            [self.network.predict_base, self.network.Qvalue_spatial_flat],
+            [self.network.predict_base, self.network.predict_spatial],
             feed_dict={self.network.inputs_spatial_screen: screen_stack,
                        self.network.inputs_spatial_minimap: minimap_stack
                        })
 
         return p_b, p_s
 
+
     def step(self, obs):
         super(DeepQAgent, self).step(obs)
 
         p_b, p_s = self.step_action(obs)
-        print(p_s)
+        random_number = np.random.uniform()
 
-
-
-        if _MOVE_SCREEN in obs.observation["available_actions"] and p_b == [1]:
-            action = Actions[1]
-        elif p_b == [2]:
-            action = Actions[2]
+        if epsilon > random_number:
+            print("Random")
+            if _MOVE_SCREEN in obs.observation["available_actions"]:
+                function_id = Actions[np.random.choice(np.arange(3))]
+                args = [[np.random.randint(0, size) for size in arg.sizes]
+                        for arg in self.action_spec.functions[function_id].args]
+                return actions.FunctionCall(function_id, args)
+            else:
+                function_id = Actions[np.random.choice(np.arange(2))]
+                args = [[np.random.randint(0, size) for size in arg.sizes]
+                        for arg in self.action_spec.functions[function_id].args]
+                return actions.FunctionCall(function_id, args)
         else:
-            action = Actions[0]
-
-        function_id = action
-        print(function_id)
-        args = [[np.random.randint(0, size) for size in arg.sizes]
-                for arg in self.action_spec.functions[function_id].args]
-        return actions.FunctionCall(function_id, args)
+            print("Greedy")
+            print(p_b)
+            if _MOVE_SCREEN in obs.observation["available_actions"] and p_b == [1]:
+                action = Actions[2]
+                x = int(p_s[0]%64)
+                y = int(p_s[0]/64)
+                print(x,y)
+                target = [x,y]
+                actions.FunctionCall(action, target)
+            elif p_b == [0]:
+                action = Actions[0]
+                return actions.FunctionCall(action,[_SELECT_ALL])
+            else:
+                action = Actions[1]
+                return actions.FunctionCall(action, [])

@@ -247,8 +247,10 @@ class DeepQAgent(base_agent.BaseAgent):
 
         if not os.path.exists(model_path):
             os.makedirs(model_path)
-
+        # Learning Network
         self.network = Qnetwork(self.obs_spec, self.action_spec)
+        # Target Network
+        self.Target = Qnetwork(self.obs_spec, self.action_spec)
         # saver = tf.train.Saver(max_to_keep=5)
         print("Intitializing")
 

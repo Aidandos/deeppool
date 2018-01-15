@@ -1,17 +1,3 @@
-"""
-PySC2_A3C_AtariNet.py
-A script for training and running an A3C agent on the PySC2 environment, with reference to DeepMind's paper:
-[1] Vinyals, Oriol, et al. "Starcraft II: A new challenge for reinforcement learning." arXiv preprint arXiv:1708.04782 (2017).
-Advantage estimation uses generalized advantage estimation from:
-[2] Schulman, John, et al. "High-dimensional continuous control using generalized advantage estimation." arXiv preprint arXiv:1506.02438 (2015).
-
-Credit goes to Arthur Juliani for providing for reference an implementation of A3C for the VizDoom environment
-https://medium.com/emergent-future/simple-reinforcement-learning-with-tensorflow-part-8-asynchronous-actor-critic-agents-a3c-c88f72a5e9f2
-https://github.com/awjuliani/DeepRL-Agents
-
-The FullyConvAgent is based on greentfrapp's implementation of PySC2 AtariNet script.
-https://github.com/greentfrapp
-"""
 
 import threading
 import multiprocessing
